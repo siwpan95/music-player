@@ -44,10 +44,28 @@ export class PlayerService extends Service {
   setMute(m) { this.kernel.setMute(m); }
   getState() { return this.kernel.getState(); }
 
-  /** Convenience: build a media descriptor from a local path. */
-  static mediaFromPath(path, title) {
+  /** 用 10 段增益重启 VLC（null = 关闭均衡器），并恢复播放位置/状态。 */
+  async restartWithEqualizer(bands) {
+    const state = this.kernel.getState();
+    const prevUri = state.uri;
+    const prevSec = state.currentTime;
+    const wasPlaying = state.status === 'playing';
+    const args = bands
+      ? ['--audio-filter', 'equalizer', '--equalizer-bands', bands.map((b) => String(b)).join(' ')]
+      : [];
+    await this.kernel.restart(args);
+    if (prevUri) {
+      await this.kernel.load(prevUri);
+      if (prevSec > 0) this.kernel.seekMs(prevSec * 1000);
+      if (!wasPlaying) this.kernel.pause();
+    }
+  }
+
+  /** Convenience: build a media descriptor from a local path or URL. */
+  static mediaFromPath(path, title, itemType = 'local_file') {
     const uri = toVlcUri(path);
-    return { uri, path, title: title || path.split(/[\\/]/).pop() };
+    const stem = path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+    return { uri, path, title: title || stem, item_type: itemType };
   }
 }
 

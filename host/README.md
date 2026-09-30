@@ -9,16 +9,31 @@ app.js                    入口：装配 root Context、注册服务、加载�
 src/
   core/index.js           零依赖的 Cordis 兼容内核（Context / Service / 事件总线 / inject / dispose）
   kernel.js               VLC RC 控制器（框架无关，可直接单测/复用）
+  lib/                    纯逻辑模块（框架无关，可单测/A/B 对拍）
+    equalizer.js          10 段均衡器预设 / clamp / resolve（对齐 Python equalizer.py）
+    lrc.js                LRC 歌词解析 + 二分定位（对齐 lrc_parser.py）
+    radio.js              电台 m3u/m3u8 解析（对齐 radio_manager.py）
+    visualizer.js         ffmpeg 波形/频谱（手写 FFT，对齐 visualizer.py）
+    contract.js           PlayerState / MediaItem 状态契约聚合（对齐 player_state.py）
   services/
     player.js             PlayerService —— 包装 kernel，转发 player/* 事件
     playlist.js           PlaylistService —— 队列 + 播放模式 + 自动切歌
+    equalizer.js          EqualizerService —— 预设切换（VLC 启动参数 + 重启）
+    lyrics.js             LyricsService —— 同名 .lrc 加载 + 当前行定位
+    visualizer.js         VisualizerService —— 频谱/波形预计算 + 帧查询
+    encrypted-import.js   EncryptedImportService —— 调 ncmturnmp3 解密
+    rpc.js                RpcService —— TCP JSON-RPC 2.0（对齐 Python rpc_bridge）
   plugins/
     webui.js              node:http 静态页 + REST + SSE 实时推送
     example.js            扩展点示例插件（订阅事件总线即可）
-public/index.html         浏览器 UI（单文件，SSE 实时更新）
+public/index.html         浏览器 UI（单文件：控制 + 歌词 + 可视化 + 均衡器 + 电台 + 列表）
+docs/AB_PARITY.md         A/B 行为等价对拍报告
 test/
+  lib.test.mjs            纯逻辑模块单测（均衡器/LRC/电台，对齐 Python 测试向量）
   playlist.test.mjs       播放模式纯函数 + 服务逻辑离线单测（无 VLC）
+  rpc.test.mjs            RPC 命令面 + 均衡器切换端到端（真实 VLC）
   e2e.mjs                 端到端验证（真实 VLC 播放 + Web API + 自动切歌）
+  ab_parity.mjs           A/B 对拍脚本（Python harness ↔ Node host）
 ```
 
 分层与职责：
@@ -55,7 +70,11 @@ node app.js            # 启动 host，默认 http://127.0.0.1:19718
 | `VLC_RC_PORT` | `18199` | VLC RC 端口 |
 | `WEB_PORT` | `19718` | Web UI 端口 |
 | `WEB_HOST` | `127.0.0.1` | Web UI 绑定地址 |
+| `RPC_PORT` / `RPC_HOST` | `7700` / `127.0.0.1` | JSON-RPC 端口 / 绑定 |
 | `PLAY_MODE` | `sequential` | 初始播放模式 |
+| `VIZ_MODE` | `spectrum` | 可视化模式（spectrum/waveform） |
+| `NCMTURNMP3_DIR` | `D:/projects/ncmturnmp3` | ncmturnmp3 目录（加密导入） |
+| `FFMPEG_BIN` | `E:/ffmpeg/bin/ffmpeg.exe` | ffmpeg 路径（可视化） |
 | `VLC_DEBUG` | — | 置 `1` 打印原始 RC 收发 |
 
 ## Web API
@@ -73,6 +92,23 @@ node app.js            # 启动 host，默认 http://127.0.0.1:19718
 | `POST /api/mode?m=loop` | 播放模式（sequential/loop/single/random） |
 | `POST /api/add` | 添加曲目（JSON `{path,title}` 或 `{paths:[...]}`） |
 | `POST /api/remove?index=N` | 移除曲目 |
+| `POST /api/equalizer?preset=rock` | 应用均衡器预设（无参数 = 关闭） |
+| `GET /api/lyrics` | 歌词列表 + 当前行（`?position_ms=`） |
+| `GET /api/visualizer/frame?position_ms=` | 可视化当前帧 |
+| `POST /api/radio` | 添加电台（JSON `{url,name}` 或 `{m3u}`） |
+| `POST /api/import-encrypted` | 解密导入（JSON `{path}`，仅本人拥有文件） |
+
+## 无头 RPC（与 Python 版等价）
+
+除 Web UI 外，host 同时监听 **TCP JSON-RPC 2.0**（默认 `127.0.0.1:7700`），命令面与
+返回契约对齐 Python 版 `rpc_bridge`（`play/pause/resume/stop/next/prev/play_index/
+seek/volume/mute/set_mode/equalizer/add_files/status/playlist/ping`）。
+
+```bash
+echo '{"jsonrpc":"2.0","method":"status","params":{},"id":1}' | nc 127.0.0.1 7700
+```
+
+这是 A/B 对拍的 B 侧接口，详见 [docs/AB_PARITY.md](docs/AB_PARITY.md)。
 
 ## 已验证的 VLC RC 协议要点（实测）
 
@@ -87,6 +123,17 @@ node app.js            # 启动 host，默认 http://127.0.0.1:19718
 ## 测试
 
 ```bash
+node test/lib.test.mjs        # 纯逻辑单测（均衡器/LRC/电台，对齐 Python 测试向量）
 node test/playlist.test.mjs   # 离线单测（播放模式逻辑 + 自动切歌接线）
 node test/e2e.mjs             # 端到端（真实 VLC + 临时音频 + Web API + 自动切歌）
+node test/rpc.test.mjs        # RPC 命令面 + 均衡器切换（真实 VLC）
+node test/ab_parity.mjs       # A/B 行为等价对拍（Python harness ↔ Node host）
 ```
+
+## A/B 行为等价
+
+`test/ab_parity.mjs` 用同一份 JSON-RPC transcript 分别打 Python 无头 harness
+（`tools/ab_harness.py`，A 侧）与 Node host（B 侧），逐观测点比对返回序列：
+**25 一致 / 0 差异**。有意差异（URI 表示、position 精度、命令即时 status）与
+对拍前修复的参照实现 bug（current_index 未维护、枚举不可 JSON 序列化）见
+[docs/AB_PARITY.md](docs/AB_PARITY.md)。

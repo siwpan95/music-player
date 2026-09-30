@@ -11,6 +11,7 @@ import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { playerState, displayTitle, isRadioMedia } from '../lib/contract.js';
 
 const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'public');
 const MIME = {
@@ -29,14 +30,18 @@ export function webUi(ctx, config = {}) {
   const clients = new Set(); // SSE response objects
 
   const snapshot = () => {
-    const player = ctx.get('player');
     const playlist = ctx.get('playlist');
+    const lyrics = ctx.get('lyrics');
+    const viz = ctx.get('visualizer');
     return {
-      player: player ? player.getState() : {},
+      ...playerState(ctx), // Python PlayerState 契约字段
       current: playlist ? playlist.current : null,
-      playlist: playlist ? playlist.getList() : [],
-      currentIndex: playlist ? playlist.currentIndex : -1,
-      mode: playlist ? playlist.mode : 'sequential',
+      playlist: playlist ? playlist.getList().map((it, i) => ({
+        index: i, title: displayTitle(it), radio: isRadioMedia(it),
+        current: i === playlist.currentIndex,
+      })) : [],
+      lyricsLoaded: lyrics ? lyrics.loaded : false,
+      viz: viz ? { mode: viz.mode, durationMs: viz.durationMs } : null,
     };
   };
 
@@ -48,7 +53,7 @@ export function webUi(ctx, config = {}) {
   };
 
   // Push a fresh snapshot whenever anything interesting changes.
-  const events = ['player/state', 'player/position', 'player/end', 'player/current', 'playlist/changed', 'playlist/current', 'playlist/ended'];
+  const events = ['player/state', 'player/position', 'player/end', 'player/current', 'playlist/changed', 'playlist/current', 'playlist/ended', 'equalizer/changed', 'lyrics/loaded', 'visualizer/ready'];
   const offs = events.map((e) => ctx.on(e, broadcast));
 
   function sendJson(res, code, obj) {
@@ -216,6 +221,72 @@ export function webUi(ctx, config = {}) {
         const index = parseInt(sp.get('index'), 10);
         const ok = playlist.removeAt(index);
         sendJson(res, 200, { ok });
+        return;
+      }
+
+      case '/api/equalizer': {
+        const eq = ctx.get('equalizer');
+        if (!eq) { sendJson(res, 503, { error: 'equalizer service unavailable' }); return; }
+        const preset = sp.get('preset') || undefined;
+        const bandsStr = sp.get('bands');
+        const bands = bandsStr ? bandsStr.split(',').map((s) => parseFloat(s.trim())) : undefined;
+        const r = await eq.setEqualizer({ preset, bands });
+        sendJson(res, 200, r);
+        return;
+      }
+
+      case '/api/lyrics': {
+        const lyrics = ctx.get('lyrics');
+        if (!lyrics) { sendJson(res, 200, { loaded: false, lines: [], current: null }); return; }
+        const posMs = sp.has('position_ms') ? parseInt(sp.get('position_ms'), 10) : (player.getState().currentTime * 1000);
+        sendJson(res, 200, { loaded: lyrics.loaded, lines: lyrics.lines, current: lyrics.lineAt(posMs) });
+        return;
+      }
+
+      case '/api/visualizer/frame': {
+        const viz = ctx.get('visualizer');
+        const posMs = sp.has('position_ms') ? parseInt(sp.get('position_ms'), 10) : (player.getState().currentTime * 1000);
+        const frame = viz ? viz.frameAt(posMs) : null;
+        sendJson(res, 200, { frame: frame ? Array.from(frame) : null, durationMs: viz ? viz.durationMs : 0 });
+        return;
+      }
+
+      case '/api/radio': {
+        const body = req.method === 'POST' ? await readBody(req) : {};
+        if (body.m3u) {
+          const { RadioManager } = await import('../lib/radio.js');
+          const rm = new RadioManager();
+          const items = rm.parseM3u(body.m3u);
+          for (const it of items) playlist.add({ uri: it.path, path: it.path, title: it.name, item_type: it.item_type });
+          sendJson(res, 200, { added: items.length });
+          return;
+        }
+        if (body.url) {
+          const kind = String(body.url).toLowerCase().endsWith('.m3u8') ? 'hls' : 'http';
+          const itemType = kind === 'hls' ? 'radio_hls' : 'radio_http';
+          const media = { uri: body.url, path: body.url, title: body.name || body.url, item_type: itemType };
+          playlist.add(media);
+          if (playlist.currentIndex < 0) await playlist.play(playlist.length - 1);
+          sendJson(res, 200, { added: 1 });
+          return;
+        }
+        sendJson(res, 400, { error: 'need url or m3u' });
+        return;
+      }
+
+      case '/api/import-encrypted': {
+        const svc = ctx.get('encrypted-import');
+        if (!svc) { sendJson(res, 503, { error: 'encrypted-import unavailable' }); return; }
+        const body = req.method === 'POST' ? await readBody(req) : {};
+        if (!body.path) { sendJson(res, 400, { error: 'need path' }); return; }
+        try {
+          const media = svc.importEncrypted(body.path, { outputFormat: body.format || 'mp3', bitrate: body.bitrate || '320k' });
+          playlist.add(media);
+          if (playlist.currentIndex < 0) await playlist.play(playlist.length - 1);
+          sendJson(res, 200, { ok: true, title: media.title, path: media.path });
+        } catch (e) {
+          sendJson(res, 500, { error: String(e && e.message || e) });
+        }
         return;
       }
 

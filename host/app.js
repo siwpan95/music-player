@@ -14,6 +14,11 @@
 import { Context, Logger } from './src/core/index.js';
 import { PlayerService } from './src/services/player.js';
 import { PlaylistService } from './src/services/playlist.js';
+import { EqualizerService } from './src/services/equalizer.js';
+import { LyricsService } from './src/services/lyrics.js';
+import { VisualizerService } from './src/services/visualizer.js';
+import { EncryptedImportService } from './src/services/encrypted-import.js';
+import { RpcService } from './src/services/rpc.js';
 import { webUi } from './src/plugins/webui.js';
 import { examplePlugin } from './src/plugins/example.js';
 
@@ -30,6 +35,16 @@ new PlaylistService(root, {
   mode: process.env.PLAY_MODE || 'sequential',
   autoAdvance: true,
 });
+new EqualizerService(root);
+new LyricsService(root);
+new VisualizerService(root, { mode: process.env.VIZ_MODE || 'spectrum' });
+new EncryptedImportService(root, {
+  ncmDir: process.env.NCMTURNMP3_DIR || 'D:/projects/ncmturnmp3',
+});
+new RpcService(root, {
+  port: parseInt(process.env.RPC_PORT || '7700', 10),
+  host: process.env.RPC_HOST || '127.0.0.1',
+});
 
 // ---- plugins (declarative loader; each entry is [pluginFn, config]) ----
 const plugins = [
@@ -38,7 +53,7 @@ const plugins = [
 ];
 for (const [plugin, config] of plugins) root.plugin(plugin, config);
 
-root.logger.info('host started; services = player, playlist; plugins =', plugins.map((p) => p[0].name).join(', '));
+root.logger.info('host started; services = player, playlist, equalizer, lyrics, visualizer, encrypted-import, rpc');
 
 // ---- graceful shutdown ----
 let shutting = false;

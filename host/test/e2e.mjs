@@ -77,37 +77,37 @@ try {
 
   // 3) play first track
   await api('/api/play', { index: 0 });
-  const playing = await waitFor((s) => s.player && s.player.status === 'playing' && s.player.currentTime > 0, 8000, 'playing + time advancing');
-  assert(playing.player.status === 'playing', 'VLC reports playing');
-  assert(playing.player.currentTime > 0, `currentTime advancing (${playing.player.currentTime.toFixed(1)}s)`);
-  assert(playing.currentIndex === 0, 'currentIndex == 0 after play(0)');
-  const dur = playing.player.duration;
+  const playing = await waitFor((s) => s.status === 'playing' && s.position_ms > 0, 8000, 'playing + time advancing');
+  assert(playing.status === 'playing', 'VLC reports playing');
+  assert(playing.position_ms > 0, `currentTime advancing (${(playing.position_ms / 1000).toFixed(1)}s)`);
+  assert(playing.current_index === 0, 'currentIndex == 0 after play(0)');
+  const dur = playing.duration_ms / 1000;
   assert(dur > 2 && dur < 4, `duration ~3s (got ${dur ? dur.toFixed(1) : '?'})`);
 
   // 4) pause / resume
   await api('/api/pause');
-  const paused = await waitFor((s) => s.player.status === 'paused', 3000, 'paused');
-  assert(paused.player.status === 'paused', 'pause works (status paused)');
+  const paused = await waitFor((s) => s.status === 'paused', 3000, 'paused');
+  assert(paused.status === 'paused', 'pause works (status paused)');
 
   await api('/api/play');
-  const resumed = await waitFor((s) => s.player.status === 'playing', 3000, 'resumed');
-  assert(resumed.player.status === 'playing', 'resume works');
+  const resumed = await waitFor((s) => s.status === 'playing', 3000, 'resumed');
+  assert(resumed.status === 'playing', 'resume works');
 
   // 5) volume
   await api('/api/volume', { v: 50 });
-  const volState = await waitFor((s) => s.player.volume === 50, 2000, 'volume 50');
-  assert(volState.player.volume === 50, 'setVolume(50) reflected in state');
+  const volState = await waitFor((s) => s.volume === 50, 2000, 'volume 50');
+  assert(volState.volume === 50, 'setVolume(50) reflected in state');
 
   // 6) seek to 50%
   await api('/api/seek', { f: 0.5 });
-  const seekState = await waitFor((s) => s.player.currentTime >= dur * 0.3 && s.player.currentTime <= dur * 0.9, 3000, 'seek 50%');
-  assert(seekState.player.currentTime > dur * 0.3, `seek to ~50% worked (cur=${seekState.player.currentTime.toFixed(1)}/${dur.toFixed(1)})`);
+  const seekState = await waitFor((s) => (s.position_ms / 1000) >= dur * 0.3 && (s.position_ms / 1000) <= dur * 0.9, 3000, 'seek 50%');
+  assert((seekState.position_ms / 1000) > dur * 0.3, `seek to ~50% worked (cur=${(seekState.position_ms / 1000).toFixed(1)}/${dur.toFixed(1)})`);
 
   // 7) auto-advance: replay index 0, wait for it to end and advance to index 1
   await api('/api/play', { index: 0 });
-  await waitFor((s) => s.player.status === 'playing', 3000, 'replay 0');
-  const advanced = await waitFor((s) => s.currentIndex === 1, 9000, 'auto-advance to index 1');
-  assert(advanced.currentIndex === 1, 'auto-advanced to next track on end-of-track');
+  await waitFor((s) => s.status === 'playing', 3000, 'replay 0');
+  const advanced = await waitFor((s) => s.current_index === 1, 9000, 'auto-advance to index 1');
+  assert(advanced.current_index === 1, 'auto-advanced to next track on end-of-track');
 
   // 8) SSE stream pushes at least one update
   const esRes = await fetch(`${BASE}/api/stream`);

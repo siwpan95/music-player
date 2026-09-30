@@ -19,8 +19,12 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const VLC_STATE = { 0: 'idle', 1: 'opening', 2: 'buffering', 3: 'playing', 4: 'paused', 5: 'stopped', 6: 'ended', 7: 'error' };
 const VOLUME_FULL = 256; // VLC's "100%"
 
+const URL_SCHEME_RE = /^(https?|rtsp|rtmp|mms|ftp):\/\//i;
+
 export function toVlcUri(path) {
   const p = path.replace(/\\/g, '/');
+  // 网络流 URL（电台/HLS）原样返回，不转 file:///
+  if (URL_SCHEME_RE.test(p)) return p;
   let abs = p;
   if (!/^file:/i.test(abs)) {
     abs = 'file:///' + (p.startsWith('/') ? p.slice(1) : p);
@@ -29,11 +33,12 @@ export function toVlcUri(path) {
 }
 
 export class PlayerKernel {
-  constructor({ vlcPath = 'E:/VLC/vlc.exe', rcPort = 18199, logger = console, debug = false } = {}) {
+  constructor({ vlcPath = 'E:/VLC/vlc.exe', rcPort = 18199, logger = console, debug = false, extraArgs = [] } = {}) {
     this.vlcPath = vlcPath;
     this.rcPort = rcPort;
     this.logger = logger;
     this.debug = debug;
+    this._extraArgs = extraArgs;
     this._proc = null;
     this._client = null;
     this._buf = '';
@@ -77,12 +82,32 @@ export class PlayerKernel {
     try { if (this._proc) this._proc.kill('SIGKILL'); } catch { /* ignore */ }
   }
 
+  /** 用新参数重启 VLC（用于运行时切换均衡器等启动参数）。 */
+  async restart(newExtraArgs = null) {
+    if (newExtraArgs !== null) this._extraArgs = newExtraArgs;
+    const oldProc = this._proc;
+    const exited = oldProc ? new Promise((r) => oldProc.once('exit', r)) : Promise.resolve();
+    await this.stopProcess();
+    await exited; // 等 VLC 真正退出，避免 exit 事件误报 "exited early"
+    this._started = false;
+    this._stopping = false;
+    this._client = null;
+    this._proc = null;
+    this._queue = [];
+    this._buf = '';
+    this._pollTimer = null;
+    this._endedFired = false;
+    this._lastNumber = undefined;
+    await this.start();
+  }
+
   _spawnVlc() {
     return new Promise((resolve, reject) => {
       const args = [
         '--intf=dummy', '--extraintf=rc',
         `--rc-host=127.0.0.1:${this.rcPort}`,
         '--no-video', '--no-osd',
+        ...this._extraArgs,
       ];
       this.logger.info?.('spawning VLC:', this.vlcPath, args.join(' '));
       this._proc = spawn(this.vlcPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
