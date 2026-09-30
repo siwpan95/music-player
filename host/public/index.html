@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Music Player · Cordis Host</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2329; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #2f6fed; --accent-ink: #ffffff;
+    --playing: #16a34a; --paused: #d97706; --stopped: #9ca3af; --danger: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px; background: var(--card); border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 16px; margin: 0; }
+  .conn { font-size: 12px; color: var(--muted); }
+  .conn .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--stopped); margin-right: 6px; vertical-align: middle; }
+  .conn.on .dot { background: var(--playing); }
+  main { max-width: 880px; margin: 18px auto; padding: 0 16px; display: grid; gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .now-title { font-size: 18px; font-weight: 600; margin: 0 0 4px; word-break: break-all; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; color: #fff; background: var(--stopped); display: inline-block; }
+  .badge.playing { background: var(--playing); }
+  .badge.paused { background: var(--paused); }
+  .time { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+  button {
+    font: inherit; border: 1px solid var(--line); background: #fff; color: var(--ink);
+    border-radius: 8px; padding: 8px 14px; cursor: pointer; transition: .12s;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.primary:hover { filter: brightness(1.05); color: #fff; }
+  button.danger:hover { border-color: var(--danger); color: var(--danger); }
+  select, input[type=text] { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1 1 240px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  tr.current { background: #eef4ff; }
+  tr.current td:first-child { font-weight: 700; }
+  td.idx { color: var(--muted); width: 36px; }
+  .add-box { display: flex; gap: 8px; flex-wrap: wrap; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .vol { width: 140px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎵 Music Player · Cordis Host</h1>
+  <span class="conn" id="conn"><span class="dot"></span><span id="connText">连接中…</span></span>
+</header>
+<main>
+  <section class="card">
+    <p class="now-title" id="np-title">未播放</p>
+    <span class="badge" id="np-badge">stopped</span>
+    <div class="time"><span id="np-cur">0:00</span><span id="np-dur">0:00</span></div>
+    <input type="range" id="seek" min="0" max="1000" value="0" />
+    <div class="controls">
+      <button id="btn-prev">⏮ 上一曲</button>
+      <button class="primary" id="btn-play">▶ 播放</button>
+      <button id="btn-stop">⏹ 停止</button>
+      <button id="btn-next">⏭ 下一曲</button>
+      <span class="row" style="margin-left:auto">
+        <label class="vol">音量 <input type="range" id="vol" min="0" max="100" value="80" class="vol" /></label>
+        <button id="btn-mute">🔊 静音</button>
+      </span>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label>模式
+        <select id="mode">
+          <option value="sequential">顺序</option>
+          <option value="loop">列表循环</option>
+          <option value="single">单曲循环</option>
+          <option value="random">随机</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3 style="margin:0 0 10px">添加曲目</h3>
+    <div class="add-box">
+      <input type="text" id="add-path" class="grow" placeholder="本地文件路径，如 E:/music/song.mp3" />
+      <input type="text" id="add-title" placeholder="标题（可选）" style="flex:1 1 160px" />
+      <button class="primary" id="btn-add">＋ 添加</button>
+    </div>
+    <p class="hint">支持 VLC 可解码的任何格式。多文件可每行一个粘贴到路径框（以换行分隔）。添加后若列表为空会自动播放第一首。</p>
+  </section>
+
+  <section class="card">
+    <h3 style="margin:0 0 10px">播放列表</h3>
+    <table>
+      <thead><tr><th class="idx">#</th><th>标题</th><th style="width:90px"></th></tr></thead>
+      <tbody id="pl-body"><tr><td colspan="3" style="color:var(--muted)">列表为空</td></tr></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let state = { player: {}, current: null, playlist: [], currentIndex: -1, mode: 'sequential' };
+let seeking = false;
+
+function fmt(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+async function cmd(endpoint, params) {
+  const url = new URL(endpoint, location.origin);
+  if (params) for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  const r = await fetch(url, { method: 'POST' });
+  return r.json().catch(() => ({}));
+}
+
+async function render() {
+  const p = state.player || {};
+  $('np-title').textContent = state.current ? (state.current.title || state.current.path) : '未播放';
+  const badge = $('np-badge');
+  badge.textContent = p.status || 'stopped';
+  badge.className = 'badge' + (p.status === 'playing' ? ' playing' : p.status === 'paused' ? ' paused' : '');
+  $('np-cur').textContent = fmt(p.currentTime);
+  $('np-dur').textContent = fmt(p.duration);
+  const frac = (p.duration > 0 && p.currentTime >= 0) ? Math.min(1000, Math.round((p.currentTime / p.duration) * 1000)) : 0;
+  if (!seeking) $('seek').value = frac;
+  $('vol').value = p.volume != null ? p.volume : 80;
+  $('btn-mute').textContent = p.muted ? '🔇 取消静音' : '🔊 静音';
+  $('btn-play').textContent = p.status === 'playing' ? '⏸ 暂停' : '▶ 播放';
+  $('mode').value = state.mode;
+
+  // playlist
+  const body = $('pl-body');
+  if (!state.playlist.length) {
+    body.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">列表为空</td></tr>';
+  } else {
+    body.innerHTML = state.playlist.map((it) => `
+      <tr class="${it.index === state.currentIndex ? 'current' : ''}">
+        <td class="idx">${it.index + 1}</td>
+        <td>${escapeHtml(it.title || it.path)}</td>
+        <td><button class="danger" data-rm="${it.index}">移除</button></td>
+      </tr>`).join('');
+    body.querySelectorAll('tr').forEach((tr) => {
+      tr.addEventListener('click', (e) => {
+        if (e.target.dataset.rm != null) return;
+        cmd('/api/play', { index: tr.querySelector('.idx').textContent - 1 });
+      });
+    });
+    body.querySelectorAll('[data-rm]').forEach((b) => {
+      b.addEventListener('click', (e) => { e.stopPropagation(); cmd('/api/remove', { index: b.dataset.rm }); });
+    });
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ---- SSE live updates ----
+function connect() {
+  try {
+    const es = new EventSource('/api/stream');
+    es.onopen = () => { $('conn').classList.add('on'); $('connText').textContent = '已连接'; };
+    es.onmessage = (e) => { try { state = JSON.parse(e.data); render(); } catch {} };
+    es.onerror = () => { $('conn').classList.remove('on'); $('connText').textContent = '重连中…'; };
+  } catch {
+    fallbackPoll();
+  }
+}
+function fallbackPoll() {
+  setInterval(async () => {
+    try { state = await (await fetch('/api/status')).json(); render(); $('conn').classList.add('on'); $('connText').textContent = '轮询'; } catch {}
+  }, 1000);
+}
+
+// ---- wire controls ----
+$('btn-play').onclick = () => cmd('/api/play');
+$('btn-prev').onclick = () => cmd('/api/prev');
+$('btn-next').onclick = () => cmd('/api/next');
+$('btn-stop').onclick = () => cmd('/api/stop');
+$('btn-mute').onclick = () => cmd('/api/mute', { m: '1' });
+$('vol').oninput = (e) => cmd('/api/volume', { v: e.target.value });
+$('mode').onchange = (e) => cmd('/api/mode', { m: e.target.value });
+$('seek').oninput = () => { seeking = true; };
+$('seek').onchange = (e) => { cmd('/api/seek', { f: (e.target.value / 1000).toFixed(4) }); seeking = false; };
+
+$('btn-add').onclick = async () => {
+  const raw = $('add-path').value.trim();
+  if (!raw) return;
+  const lines = raw.split('\n').map((s) => s.trim()).filter(Boolean);
+  if (lines.length === 1) {
+    await cmd('/api/add', {}); // not used; below uses body
+  }
+  // send as multiple paths via raw fetch with body
+  const title = $('add-title').value.trim();
+  const body = lines.length === 1 ? { path: lines[0], title } : { paths: lines.map((p) => ({ path: p })) };
+  await fetch('/api/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  $('add-path').value = ''; $('add-title').value = '';
+};
+
+connect();
+render();
+</script>
+</body>
+</html>

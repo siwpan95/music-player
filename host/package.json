@@ -1,0 +1,17 @@
+{
+  "name": "music-player-host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cordis-based music player host (VLC RC kernel + local Web UI). Zero npm dependencies; runs on Node 22+.",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "node test/playlist.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
