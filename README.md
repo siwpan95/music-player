@@ -8,8 +8,8 @@
 
 ```bash
 # 1. 安装 VLC 运行时（libVLC）—— 播放内核依赖它
-#    Windows: https://www.videolan.org/vlc/  （本机装在 E:\VLC，脚本会自动探测）
-#    或在启动前设置环境变量： set VLC_DIR=E:\VLC
+#    Windows: https://www.videolan.org/vlc/  （脚本会自动探测安装位置）
+#    若自动探测失败，启动前设置环境变量： set VLC_DIR=<你的 VLC 安装目录>
 
 # 2. 安装 Python 依赖
 pip install -e .
