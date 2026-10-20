@@ -209,3 +209,16 @@ MIT — siwpan
 >   来源与许可证随该仓库，范围限定为「仅解密本人已购买内容」，不复制其代码。
 > - 界面/编排/元数据/可视化/均衡器/RPC 桥均为本项目自有实现，MIT 开源。
 > - 配套脚本 `tools/fetch_gitee_readmes.py` 可下载本人全部 Gitee 仓库 README 至 `docs/reference-readmes/`。
+
+## PyPI 定性（2026-10-20 · 治理结论）
+
+> **本项目不推送 PyPI**，理由两条，均已核实：
+> 1. **播放内核完全由 python-vlc（libVLC）承担**——本项目自有代码只做界面 / 编排 / 元数据 / 可视化 /
+>    均衡器 / RPC 桥，且强依赖 VLC 运行时（`libvlc.dll` + plugins，需单独安装或 PyInstaller 内嵌）。
+>    离开 libVLC 即无法工作，属于「依赖外部运行时内核的桌面应用」，不是可独立分发的 Python 库。
+> 2. **依赖兄弟仓 `ncmturnmp3`**（以路径注入方式复用），发到 PyPI 后安装方拿不到该上游，功能直接缺失。
+>
+> 分发渠道：Gitee Release 源码 / PyInstaller 桌面 exe（见上文「打包为桌面 exe」）。
+> 若未来要把某个**不依赖 libVLC 的纯函数模块**（如 `equalizer.py` 的预设、`lrc_parser.py`）单独抽出发布，
+> 应拆成独立仓库再评估，不要在应用壳内切包。
+
