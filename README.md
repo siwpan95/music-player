@@ -1,3 +1,8 @@
+> 📦 **已归档（Archived — 仅作参考）**
+> 本仓库已收入归档仓 **players-unified**（代码与完整 git 历史一并迁入，原仓冻结不再开发）。
+> 历史分支见归档仓的 `archive/music-player` 分支；活跃维护请前往 **players-unified**。
+> _This repo is archived into players-unified; development continues there. Do not commit here._
+
 # Music Player · Python + VLC
 
 > 一个本地优先的桌面音乐播放器：tkinter 做界面，python-vlc（libVLC）做内核。全格式播放、真实 seek、LRC 歌词滚动、音频可视化、拖放导入、网络电台 / HLS，并复用本机 `ncmturnmp3` 解密导入本人已购买的加密音乐。**不造轮子**——播放内核完全交给 VLC，UI 只负责呈现与编排。
